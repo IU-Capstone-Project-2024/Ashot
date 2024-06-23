@@ -16,75 +16,9 @@ from SuperGlobal.config import cfg
 import SuperGlobal.core.checkpoint as checkpoint
 from dataset import DataSet
 
-
-# TODO file check
-# TODO features check
-
-def construct_dataloader(_DATA_DIR, dataset_name, files, scale_list):
-	"""Constructs the data loader for the given dataset."""
-	# Construct the dataset
-	dataset = DataSet(_DATA_DIR, dataset_name, files, scale_list)
-	# Create a loader
-	loader = torch.utils.data.DataLoader(
-		dataset,
-		batch_size=1,
-		shuffle=False,
-		sampler=None,
-		num_workers=4,
-		pin_memory=False,
-		drop_last=False,
-	)
-	return loader
-
-
-@torch.no_grad()
-def extract_features(model, data_dir, dataset, files, scale_list_fix, gemp, rgem, sgem, scale_list):
-	with torch.no_grad():
-		test_loader = construct_dataloader(data_dir, dataset, files, scale_list_fix)
-
-		img_feats = [[] for _ in range(len(scale_list_fix))]
-
-		for im_list in tqdm(test_loader):
-			for idx in range(len(im_list)):
-				im_list[idx] = im_list[idx].cpu()
-
-				desc = model.extract_global_descriptor(im_list[idx], gemp, rgem, sgem, scale_list)
-
-				if len(desc.shape) == 1:
-					desc.unsqueeze_(0)
-				img_feats[idx].append(desc.detach().cpu())
-		for idx in range(len(img_feats)):
-			img_feats[idx] = torch.cat(img_feats[idx], dim=0)
-			if len(img_feats[idx].shape) == 1:
-				img_feats[idx].unsqueeze_(0)
-
-		img_feats = img_feats[0]  # 6422 2048
-
-		img_feats = F.normalize(img_feats, p=2, dim=1)
-		img_feats = img_feats.cpu().numpy()
-
-	return img_feats
-
-
-@torch.no_grad()
-def calculate_embs(model, data_dir, dataset, imgs: list[str]):
-	scale_list = cfg.TEST.SCALE_LIST
-	gemp = cfg.SupG.gemp
-	rgem = cfg.SupG.rgem
-	sgem = cfg.SupG.sgem
-
-	emb_dir = os.path.join(data_dir, dataset, "embeddings.pt")
-	if os.path.exists(emb_dir):
-		print("Loading embeddings...")
-		return torch.load(emb_dir)
-
-	X = extract_features(model, data_dir, dataset, imgs, [1.0], gemp, rgem, sgem, scale_list)
-	if torch.cuda.is_available():
-		X = torch.tensor(X).cuda()
-	else:
-		X = torch.tensor(X).cpu()
-	torch.save(X, emb_dir)
-	return X
+"""
+Running model script
+"""
 
 
 def show_all_similar(folder_path, similar_images, query_image):
@@ -163,22 +97,72 @@ def find_similar(qimg, X, images_dir):
 	return
 
 
-def custom_test_model(model: CVNet_Rerank, data_dir, dataset, qimg: str):
-	# Idk What is that
-	# ---------------------------------------------------#
-	torch.backends.cudnn.benchmark = False
-	model.eval()  # Set the module in evaluation mode
-	state_dict = model.state_dict()
-	model.load_state_dict(state_dict)
-	# ---------------------------------------------------#
+def construct_dataloader(path):
+	"""Constructs the data loader for the given dataset."""
+	dataset = DataSet(os.path.join(path, "jpg"))
+	loader = torch.utils.data.DataLoader(
+		dataset,
+		batch_size=1,
+		shuffle=False,
+		sampler=None,
+		num_workers=4,
+		pin_memory=False,
+		drop_last=False,
+	)
+	return loader
 
-	# Calculate embeddings of all images
-	images_dir = os.path.join(data_dir, dataset, "jpg")
-	imgs = np.array([file for file in os.listdir(images_dir)])
-	X = calculate_embs(model, data_dir, dataset, imgs)
 
-	find_similar(qimg, X, images_dir)
-	return
+@torch.no_grad()
+def extract_features(model, data_dir, gemp, rgem, sgem, scale_list):
+	print("Extracting features...")
+	with torch.no_grad():
+		test_loader = construct_dataloader(data_dir)
+
+		img_feats = [[] for _ in range(1)]
+
+		for im_list in tqdm(test_loader):
+			for idx in range(len(im_list)):
+				im_list[idx] = im_list[idx].cpu()
+
+				desc = model.extract_global_descriptor(im_list[idx], gemp, rgem, sgem, scale_list)
+
+				if len(desc.shape) == 1:
+					desc.unsqueeze_(0)
+				img_feats[idx].append(desc.detach().cpu())
+
+		for idx in range(len(img_feats)):
+			img_feats[idx] = torch.cat(img_feats[idx], dim=0)
+			if len(img_feats[idx].shape) == 1:
+				img_feats[idx].unsqueeze_(0)
+
+		img_feats = img_feats[0]
+
+		img_feats = F.normalize(img_feats, p=2, dim=1)
+		img_feats = img_feats.cpu().numpy()
+
+	return img_feats
+
+
+@torch.no_grad()
+def calculate_embs(model, data_dir):
+	scale_list = cfg.TEST.SCALE_LIST
+	gemp = True
+	rgem = True
+	sgem = True
+
+	emb_dir = os.path.join(data_dir, "embeddings.pt")
+	if os.path.exists(emb_dir):
+		print("Loading embeddings...")
+		return torch.load(emb_dir)
+
+	X = extract_features(model, data_dir, gemp, rgem, sgem, scale_list)
+
+	if torch.cuda.is_available():
+		X = torch.tensor(X).cuda()
+	else:
+		X = torch.tensor(X).cpu()
+	torch.save(X, emb_dir)
+	return X
 
 
 # TODO what is that?
@@ -192,27 +176,48 @@ def custom_test_model(model: CVNet_Rerank, data_dir, dataset, qimg: str):
 
 
 def setup_model():
-	print("=> creating CVNet_Rerank model")
 	model = CVNet_Rerank(cfg.MODEL.DEPTH, cfg.MODEL.HEADS.REDUCTION_DIM, cfg.SupG.relup)
 	if torch.cuda.is_available():
 		print("Launch on CUDA")
-		return model.cuda()
-	print("Launch on CPU")
-	return model.cpu()
+		model.cuda()
+	else:
+		print("Launch on CPU")
+		model.cpu()
+
+	weights = "CVPR2022_CVNet_R50.pyth"
+	checkpoint.load_checkpoint(f"checkpoints/{weights}", model)
+	return model
 
 
 def tester(qimg: str):
 	model = setup_model()
-	weights = "CVPR2022_CVNet_R50.pyth"
-	checkp = os.path.join(os.getcwd(), "SuperGlobal", cfg.TEST.WEIGHTS, weights)
-	checkpoint.load_checkpoint(checkp, model)
 
-	data_dir = os.path.join(os.getcwd(), "datasets")
-	custom_test_model(model, data_dir, "custom", qimg)
+	data_dir = os.path.join(os.getcwd(), "datasets", "custom")
+	# imgs = np.array([file for file in os.listdir(os.path.join(data_dir))])
+
+	# Idk What is that
+	# ---------------------------------------------------#
+	torch.backends.cudnn.benchmark = False
+	model.eval()  # Set the module in evaluation mode
+	state_dict = model.state_dict()
+	model.load_state_dict(state_dict)
+	# ---------------------------------------------------#
+
+	# Calculate embeddings of all images
+	X = calculate_embs(model, data_dir)
+
+	find_similar(qimg, X, f"{data_dir}/jpg")
+	return
 
 
-if __name__ == "__main__":
+def parser():
 	parser = argparse.ArgumentParser(description='Find Similar Images')
 	parser.add_argument('qimg', type=str, help='Query Image')
 	args = parser.parse_args()
+
+	return args
+
+
+if __name__ == "__main__":
+	args = parser()
 	tester(args.qimg)

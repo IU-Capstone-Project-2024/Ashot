@@ -1,80 +1,44 @@
-import onnxruntime
 import os
+import re
 import torch
-from tqdm import tqdm
 
 from SuperGlobal.model.CVNet_Rerank_model import CVNet_Rerank
 from SuperGlobal.config import cfg
 import SuperGlobal.core.checkpoint as checkpoint
+
 from ModelWrapper import EmbeddingExtractor
-from utils.src.image_grouping.datasetV2 import DataSet
 
 
-def construct_dataloader(path):
-	"""Constructs the data loader for the given dataset."""
-	# Construct the dataset
-	dataset = DataSet(path, [1.0])
-	# Create a loader
-	loader = torch.utils.data.DataLoader(
-		dataset,
-		batch_size=1,
-		shuffle=False,
-		sampler=None,
-		num_workers=4,
-		pin_memory=False,
-		drop_last=False,
-	)
-	return loader
-
-
-def start():
-	model = CVNet_Rerank(cfg.MODEL.DEPTH, cfg.MODEL.HEADS.REDUCTION_DIM, cfg.SupG.relup).cpu()
-	weights = "CVPR2022_CVNet_R50.pyth"
-	checkp = os.path.join(os.getcwd(), "SuperGlobal", cfg.TEST.WEIGHTS, weights)
-	checkpoint.load_checkpoint(checkp, model)
-
+def load_model(weights, model_depth):
+	"""
+	Loads model from checkpoint and returns wrapped model for extracting to ONNX.
+	"""
+	# TODO check model params
+	model = CVNet_Rerank(model_depth, cfg.MODEL.HEADS.REDUCTION_DIM, cfg.SupG.relup).cpu()
+	model_checkpoint = os.path.join(os.getcwd(), weights)
+	checkpoint.load_checkpoint(model_checkpoint, model)
 	wrapped_model = EmbeddingExtractor(model)
-
-	loader = construct_dataloader("datasets/custom/test")
-
-	torch.tensor([]).cpu()
-
-	# for im_list in loader:
-	# 	tensor = im_list[0].cpu()
-
-	tensor = torch.randn(1, 3, 500, 500).cpu()
-
-	prog = torch.onnx.dynamo_export(wrapped_model, tensor)
-	prog.save("checkpoints/WrapperONNX.onnx")
+	return wrapped_model
 
 
-def load_model():
-	sess = onnxruntime.InferenceSession("embedding_extractor.onnx")
+def exctract(weights, input_size=(500, 500)):
+	model_depth = int(re.search(r"R(\d+)(\.pyth)", weights).group(1))
+	model = load_model(weights, model_depth)
 
-	data_path = "datasets/custom/jpg"
-	input_name = sess.get_inputs()[0].name
-	output_name = sess.get_outputs()[0].name
+	# TODO cuda support
+	dummy_input = torch.randn(1, 3, input_size[0], input_size[1]).cpu()
 
-	out = sess.run([output_name], {input_name: data_path})[0]
-	print(out)
+	prog = torch.onnx.dynamo_export(model, dummy_input)
+	prog.save(f"checkpoints/CVNet{model_depth}.onnx")
 
 
-def f():
+def test_tracing():
 	from torch.fx import symbolic_trace
 
-	model = CVNet_Rerank(cfg.MODEL.DEPTH, cfg.MODEL.HEADS.REDUCTION_DIM, cfg.SupG.relup).cpu()
-	weights = "CVPR2022_CVNet_R50.pyth"
-	checkp = os.path.join(os.getcwd(), "SuperGlobal", cfg.TEST.WEIGHTS, weights)
-	checkpoint.load_checkpoint(checkp, model)
-
-	wrapped_model = EmbeddingExtractor(model)
-
-	traced_model = symbolic_trace(wrapped_model)
-
-	# Print the graph
+	model = load_model("CVPR2022_CVNet_R50.pyth")
+	traced_model = symbolic_trace(model)
 	print(traced_model.graph)
 
 
 if __name__ == "__main__":
-	# f()
-	start()
+	exctract("checkpoints/CVPR2022_CVNet_R50.pyth")

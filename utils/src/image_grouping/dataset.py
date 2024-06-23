@@ -16,19 +16,17 @@ _SD = [0.225, 0.224, 0.229]
 class DataSet(torch.utils.data.Dataset):
 	"""Common dataset."""
 
-	def __init__(self, data_path, dataset, files: list[str], scale_list):
+	def __init__(self, data_path, scale_list=[1.0]):
 		assert os.path.exists(
 			data_path), "Data path '{}' not found".format(data_path)
-		self._data_path, self._dataset, self._scale_list = data_path, dataset, scale_list
-		self._construct_db(files)
+		self._data_path, self._scale_list = data_path, scale_list
+		self._construct_db()
 
-	def _construct_db(self, files):
+	def _construct_db(self):
 		self._db = []
-		for file in files:
-			im_path = os.path.join(
-				self._data_path, self._dataset, "jpg", file)
+		for file in os.listdir(self._data_path):
+			im_path = os.path.join(self._data_path, file)
 			self._db.append({"im_path": im_path})
-		print(self._db)
 
 	def _prepare_im(self, im):
 		"""Prepares the image for network input."""
@@ -43,10 +41,6 @@ class DataSet(torch.utils.data.Dataset):
 		# Load the image
 		try:
 			im = cv2.imread(self._db[index]["im_path"])
-
-			# if self._split == "query":
-			# 	bbx = self._db[index]["bbox"]
-			# 	im = im[int(bbx[1]):int(bbx[3]), int(bbx[0]):int(bbx[2])]
 			im_list = []
 
 			for scale in self._scale_list:

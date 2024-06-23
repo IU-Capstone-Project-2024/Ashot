@@ -5,6 +5,13 @@ from SuperGlobal.config import cfg
 import SuperGlobal.core.checkpoint as checkpoint
 
 
+"""
+Extracting model to ONNX format
+Input: Two images
+Output: Similarity score
+"""
+
+
 def setup_model():
 	print("=> creating CVNet_Rerank model")
 	model = CVNet_Rerank(50, cfg.MODEL.HEADS.REDUCTION_DIM, cfg.SupG.relup)
@@ -42,7 +49,7 @@ def export_model_to_onnx(model, dummy_input, dummy_key_img, output_path):
 def main():
 	model = setup_model()
 	weights = "CVPR2022_CVNet_R50.pyth"
-	checkp = os.path.join(os.getcwd(), "SuperGlobal", cfg.TEST.WEIGHTS, weights)
+	checkp = os.path.join(os.getcwd(), "checkpoints", weights)
 	checkpoint.load_checkpoint(checkp, model)
 
 	# Create dummy input tensors
