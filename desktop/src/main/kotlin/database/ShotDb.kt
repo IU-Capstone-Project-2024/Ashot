@@ -5,9 +5,11 @@ import androidx.room.PrimaryKey
 import java.sql.Blob
 
 @Entity
-data class Photo(
-	@PrimaryKey(autoGenerate = true) val id: Int,
-	val name: String,
-	val image: Blob
+data class Shot(
+    // @PrimaryKey(autoGenerate = true) val id: Int,
+    @PrimaryKey(autoGenerate = false) val filepath: String,
+    val blur_score: Float,
+    val embedding: Float,
+    val thumbnail: Blob
 )
 
