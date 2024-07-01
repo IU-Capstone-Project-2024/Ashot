@@ -20,7 +20,10 @@ dependencies {
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 	implementation("org.jetbrains.androidx.navigation:navigation-compose:2.7.0-alpha07")
 	implementation("androidx.compose.material:material-icons-extended:1.6.8")
-	implementation("org.xerial:sqlite-jdbc:3.36.0.3")
+	implementation("androidx.room:room-gradle-plugin:2.6.1")
+	implementation("androidx.room:room-compiler:2.6.1:")
+	implementation("androidx.room:room-runtime-jvm:2.7.0-alpha04")
+	implementation("androidx.sqlite:sqlite-bundled-jvm:2.5.0-alpha04")
 }
 
 
